@@ -7,11 +7,13 @@ import {
   TouchableOpacity,
   Animated,
   Dimensions,
+  Platform,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image } from 'expo-image';
 import { useState, useRef } from 'react';
-import Home from './screens/Home';
+import Home from './Home';
 import { FontAwesome } from '@expo/vector-icons';
 
 const { width, height } = Dimensions.get('window');
@@ -25,168 +27,113 @@ export default function App() {
   const [showWelcome, setShowWelcome] = useState(false);
   const [userName, setUserName] = useState('John Doe');
   const [isSignUp, setIsSignUp] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [authError, setAuthError] = useState('');
   
   // Sign up form states
-  const [signUpFirstName, setSignUpFirstName] = useState('');
-  const [signUpLastName, setSignUpLastName] = useState('');
+  const [signUpName, setSignUpName] = useState('');
   const [signUpEmail, setSignUpEmail] = useState('');
-  const [signUpConfirmEmail, setSignUpConfirmEmail] = useState('');
   const [signUpPassword, setSignUpPassword] = useState('');
   const [signUpConfirmPassword, setSignUpConfirmPassword] = useState('');
   const [showSignUpPassword, setShowSignUpPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // Animated values for text inputs
-  const emailBorderAnim = useRef(new Animated.Value(0)).current;
-  const emailScaleAnim = useRef(new Animated.Value(1)).current;
-  const passwordBorderAnim = useRef(new Animated.Value(0)).current;
-  const passwordScaleAnim = useRef(new Animated.Value(1)).current;
-  const signUpFirstNameBorderAnim = useRef(new Animated.Value(0)).current;
-  const signUpFirstNameScaleAnim = useRef(new Animated.Value(1)).current;
-  const signUpLastNameBorderAnim = useRef(new Animated.Value(0)).current;
-  const signUpLastNameScaleAnim = useRef(new Animated.Value(1)).current;
-  const signUpEmailBorderAnim = useRef(new Animated.Value(0)).current;
-  const signUpEmailScaleAnim = useRef(new Animated.Value(1)).current;
-  const signUpConfirmEmailBorderAnim = useRef(new Animated.Value(0)).current;
-  const signUpConfirmEmailScaleAnim = useRef(new Animated.Value(1)).current;
-  const signUpPasswordBorderAnim = useRef(new Animated.Value(0)).current;
-  const signUpPasswordScaleAnim = useRef(new Animated.Value(1)).current;
-  const signUpConfirmPasswordBorderAnim = useRef(new Animated.Value(0)).current;
-  const signUpConfirmPasswordScaleAnim = useRef(new Animated.Value(1)).current;
+  const [token, setToken] = useState(null);
 
-  // Animation handlers for Sign In
-  const handleEmailFocus = () => {
-    Animated.parallel([
-      Animated.timing(emailBorderAnim, { toValue: 1, duration: 200, useNativeDriver: false }),
-      Animated.spring(emailScaleAnim, { toValue: 1.02, friction: 3, useNativeDriver: true }),
-    ]).start();
-  };
-  const handleEmailBlur = () => {
-    Animated.parallel([
-      Animated.timing(emailBorderAnim, { toValue: 0, duration: 200, useNativeDriver: false }),
-      Animated.spring(emailScaleAnim, { toValue: 1, friction: 3, useNativeDriver: true }),
-    ]).start();
-  };
+  function getApiBase() {
+    const override = process.env.EXPO_PUBLIC_API_BASE;
+    if (override) return override;
+    if (Platform.OS === 'android') return 'http://10.0.2.2:4000';
+    if (Platform.OS === 'ios') return 'http://localhost:4000';
+    return 'http://localhost:4000';
+  }
+  const API = getApiBase();
+  if (__DEV__) console.log('API base:', API);
 
-  const handlePasswordFocus = () => {
-    Animated.parallel([
-      Animated.timing(passwordBorderAnim, { toValue: 1, duration: 200, useNativeDriver: false }),
-      Animated.spring(passwordScaleAnim, { toValue: 1.02, friction: 3, useNativeDriver: true }),
-    ]).start();
-  };
-  const handlePasswordBlur = () => {
-    Animated.parallel([
-      Animated.timing(passwordBorderAnim, { toValue: 0, duration: 200, useNativeDriver: false }),
-      Animated.spring(passwordScaleAnim, { toValue: 1, friction: 3, useNativeDriver: true }),
-    ]).start();
-  };
+async function api(path, options = {}) {
+  const res = await fetch(API + path, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    ...options
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
+  const handleSignIn = async () => {
+  try {
+    setAuthError('');
+    setSubmitting(true);
+    const body = { email: (email || '').trim(), password };
+    if (!body.email || !body.password) throw new Error('Please enter email and password');
+    const { token: t, user } = await api('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    setToken(t);
+    setUserName(user.name || 'User');
+    // Prompt user that the app will use the camera (native). On web just proceed.
+    if (Platform.OS === 'web') {
+      setShowWelcome(true);
+      setTimeout(() => { setShowWelcome(false); setLoggedIn(true); }, 800);
+    } else {
+      Alert.alert(
+        'Camera usage',
+        'This app will use your device camera to capture product images. Please allow camera access when prompted.',
+        [
+          { text: 'OK', onPress: () => { setShowWelcome(true); setTimeout(() => { setShowWelcome(false); setLoggedIn(true); }, 800); } }
+        ],
+        { cancelable: false }
+      );
+    }
+  } catch (e) {
+    console.warn('Login error:', e.message);
+    setAuthError(e.message || 'Login failed');
+  } finally { setSubmitting(false); }
+};
 
-  // Animation handlers for Sign Up
-  const handleSignUpFirstNameFocus = () => {
-    Animated.parallel([
-      Animated.timing(signUpFirstNameBorderAnim, { toValue: 1, duration: 200, useNativeDriver: false }),
-      Animated.spring(signUpFirstNameScaleAnim, { toValue: 1.02, friction: 3, useNativeDriver: true }),
-    ]).start();
-  };
-  const handleSignUpFirstNameBlur = () => {
-    Animated.parallel([
-      Animated.timing(signUpFirstNameBorderAnim, { toValue: 0, duration: 200, useNativeDriver: false }),
-      Animated.spring(signUpFirstNameScaleAnim, { toValue: 1, friction: 3, useNativeDriver: true }),
-    ]).start();
-  };
-
-  const handleSignUpLastNameFocus = () => {
-    Animated.parallel([
-      Animated.timing(signUpLastNameBorderAnim, { toValue: 1, duration: 200, useNativeDriver: false }),
-      Animated.spring(signUpLastNameScaleAnim, { toValue: 1.02, friction: 3, useNativeDriver: true }),
-    ]).start();
-  };
-  const handleSignUpLastNameBlur = () => {
-    Animated.parallel([
-      Animated.timing(signUpLastNameBorderAnim, { toValue: 0, duration: 200, useNativeDriver: false }),
-      Animated.spring(signUpLastNameScaleAnim, { toValue: 1, friction: 3, useNativeDriver: true }),
-    ]).start();
-  };
-
-  const handleSignUpEmailFocus = () => {
-    Animated.parallel([
-      Animated.timing(signUpEmailBorderAnim, { toValue: 1, duration: 200, useNativeDriver: false }),
-      Animated.spring(signUpEmailScaleAnim, { toValue: 1.02, friction: 3, useNativeDriver: true }),
-    ]).start();
-  };
-  const handleSignUpEmailBlur = () => {
-    Animated.parallel([
-      Animated.timing(signUpEmailBorderAnim, { toValue: 0, duration: 200, useNativeDriver: false }),
-      Animated.spring(signUpEmailScaleAnim, { toValue: 1, friction: 3, useNativeDriver: true }),
-    ]).start();
-  };
-
-  const handleSignUpConfirmEmailFocus = () => {
-    Animated.parallel([
-      Animated.timing(signUpConfirmEmailBorderAnim, { toValue: 1, duration: 200, useNativeDriver: false }),
-      Animated.spring(signUpConfirmEmailScaleAnim, { toValue: 1.02, friction: 3, useNativeDriver: true }),
-    ]).start();
-  };
-  const handleSignUpConfirmEmailBlur = () => {
-    Animated.parallel([
-      Animated.timing(signUpConfirmEmailBorderAnim, { toValue: 0, duration: 200, useNativeDriver: false }),
-      Animated.spring(signUpConfirmEmailScaleAnim, { toValue: 1, friction: 3, useNativeDriver: true }),
-    ]).start();
-  };
-
-  const handleSignUpPasswordFocus = () => {
-    Animated.parallel([
-      Animated.timing(signUpPasswordBorderAnim, { toValue: 1, duration: 200, useNativeDriver: false }),
-      Animated.spring(signUpPasswordScaleAnim, { toValue: 1.02, friction: 3, useNativeDriver: true }),
-    ]).start();
-  };
-  const handleSignUpPasswordBlur = () => {
-    Animated.parallel([
-      Animated.timing(signUpPasswordBorderAnim, { toValue: 0, duration: 200, useNativeDriver: false }),
-      Animated.spring(signUpPasswordScaleAnim, { toValue: 1, friction: 3, useNativeDriver: true }),
-    ]).start();
-  };
-
-  const handleSignUpConfirmPasswordFocus = () => {
-    Animated.parallel([
-      Animated.timing(signUpConfirmPasswordBorderAnim, { toValue: 1, duration: 200, useNativeDriver: false }),
-      Animated.spring(signUpConfirmPasswordScaleAnim, { toValue: 1.02, friction: 3, useNativeDriver: true }),
-    ]).start();
-  };
-  const handleSignUpConfirmPasswordBlur = () => {
-    Animated.parallel([
-      Animated.timing(signUpConfirmPasswordBorderAnim, { toValue: 0, duration: 200, useNativeDriver: false }),
-      Animated.spring(signUpConfirmPasswordScaleAnim, { toValue: 1, friction: 3, useNativeDriver: true }),
-    ]).start();
-  };
-
-  const handleSignIn = () => {
-    console.log('Sign in pressed', { email, password, rememberMe });
-    setShowWelcome(true);
-    setTimeout(() => {
-      setShowWelcome(false);
-      setLoggedIn(true);
-    }, 2000);
-  };
-
-  const handleSignUp = () => {
-    console.log('Sign up pressed', { signUpFirstName, signUpLastName, signUpEmail, signUpPassword });
-    setUserName(`${signUpFirstName} ${signUpLastName}`);
-    setShowWelcome(true);
-    setTimeout(() => {
-      setShowWelcome(false);
-      setLoggedIn(true);
-    }, 2000);
-  };
+  const handleSignUp = async () => {
+  try {
+    setAuthError('');
+    setSubmitting(true);
+    if (signUpPassword !== signUpConfirmPassword) throw new Error('Passwords do not match');
+    const body = { name: (signUpName || '').trim(), email: (signUpEmail || '').trim(), password: signUpPassword };
+    if (!body.name || !body.email || !body.password) throw new Error('Please enter name, email, and password');
+    const { token: t, user } = await api('/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    setToken(t);
+    setUserName(user.name || 'User');
+    // Prompt user that the app will use the camera (native). On web just proceed.
+    if (Platform.OS === 'web') {
+      setShowWelcome(true);
+      setTimeout(() => { setShowWelcome(false); setLoggedIn(true); }, 800);
+    } else {
+      Alert.alert(
+        'Camera usage',
+        'This app will use your device camera to capture product images. Please allow camera access when prompted.',
+        [
+          { text: 'OK', onPress: () => { setShowWelcome(true); setTimeout(() => { setShowWelcome(false); setLoggedIn(true); }, 800); } }
+        ],
+        { cancelable: false }
+      );
+    }
+  } catch (e) {
+    console.warn('Signup error:', e.message);
+    setAuthError(e.message || 'Signup failed');
+  } finally { setSubmitting(false); }
+};
 
   const toggleSignUp = () => {
     setIsSignUp(!isSignUp);
+    // Reset forms when switching
     setEmail('');
     setPassword('');
-    setSignUpFirstName('');
-    setSignUpLastName('');
+    setSignUpName('');
     setSignUpEmail('');
-    setSignUpConfirmEmail('');
     setSignUpPassword('');
     setSignUpConfirmPassword('');
   };
@@ -207,49 +154,18 @@ export default function App() {
     console.log('Microsoft sign in pressed');
   };
 
+  // animated scale for checkbox press feedback
   const checkboxScale = useRef(new Animated.Value(1)).current;
   const animateCheckbox = (toValue) => {
     Animated.spring(checkboxScale, { toValue, useNativeDriver: true, friction: 6 }).start();
   };
 
-  // Interpolate border colors
-  const emailBorderColor = emailBorderAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['transparent', '#3b82f6'],
-  });
-  const passwordBorderColor = passwordBorderAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['transparent', '#3b82f6'],
-  });
-  const signUpFirstNameBorderColor = signUpFirstNameBorderAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['transparent', '#3b82f6'],
-  });
-  const signUpLastNameBorderColor = signUpLastNameBorderAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['transparent', '#3b82f6'],
-  });
-  const signUpEmailBorderColor = signUpEmailBorderAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['transparent', '#3b82f6'],
-  });
-  const signUpConfirmEmailBorderColor = signUpConfirmEmailBorderAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['transparent', '#3b82f6'],
-  });
-  const signUpPasswordBorderColor = signUpPasswordBorderAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['transparent', '#3b82f6'],
-  });
-  const signUpConfirmPasswordBorderColor = signUpConfirmPasswordBorderAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['transparent', '#3b82f6'],
-  });
-
+  // Always show login immediately (no landing screen)
   if (loggedIn) {
-    return <Home onLogout={() => setLoggedIn(false)} userName={userName} />;
-  }
+  return <Home onLogout={() => { setToken(null); setLoggedIn(false); }} userName={userName} />;
+}
 
+  // Show welcome screen
   if (showWelcome) {
     return (
       <LinearGradient
@@ -277,7 +193,7 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      {/* Left Column - Background Image (65%) */}
+      {/* Left Column - Background Image (70%) */}
       <View style={styles.imageColumn}>
         <Image
           source={require('./assets/carton.jpg')}
@@ -287,21 +203,13 @@ export default function App() {
         />
       </View>
 
-      {/* Right Column - Login/SignUp Container (35%) */}
+      {/* Right Column - Login/SignUp Container (30%) */}
       <LinearGradient
         colors={['#F3E095', '#DACC96', '#999999']}
         locations={[0, 0.28, 1.0]}
         style={styles.loginColumn}
       >
-        {/* Inner card uses requested gradient (#EDD196 -> #877D55) */}
-        <LinearGradient
-          colors={['#EDD196', '#877D55']}
-          start={[0, 0]}
-          end={[0, 1]}
-          style={styles.loginContainer}
-        >
-          {/* NEW: visible card border + stronger shadow */}
-          <View style={styles.loginCardBorder}>
+        <View style={styles.loginContainer}>
           {/* Logo and Title */}
           <View style={styles.logoSection}>
             <Image
@@ -313,80 +221,38 @@ export default function App() {
           </View>
 
           {/* Welcome Text */}
-          <View style={styles.welcomeHeader}>
-            <FontAwesome 
-              name={isSignUp ? "user-plus" : "sign-in"} 
-              size={20} 
-              color="#1f2937" 
-              style={styles.welcomeIcon} 
-            />
-            <Text style={styles.welcomeText}>
-              {isSignUp ? 'Create an Account' : 'Welcome'}
-            </Text>
-          </View>
+          <Text style={styles.welcomeText}>
+            {isSignUp ? 'Create Your Account' : 'Welcome to CartonIQ'}
+          </Text>
 
           {/* Conditional Render: Sign In or Sign Up Form */}
           {!isSignUp ? (
             // SIGN IN FORM
             <View style={styles.formContainer}>
-              {/* Email Input with Animation */}
+              {/* Email Input */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>E-mail</Text>
-                <Animated.View
-                  style={[
-                    styles.animatedInputWrapper,
-                    {
-                      borderColor: emailBorderColor,
-                      transform: [{ scale: emailScaleAnim }],
-                    },
-                  ]}
-                >
-                  <FontAwesome 
-                    name="envelope-o" 
-                    size={16} 
-                    color="#6b7280" 
-                    style={styles.inputIcon}
-                  />
-                  <TextInput
-                    style={styles.inputWithIcon}
-                    placeholder="Enter e-mail"
-                    placeholderTextColor="#9ca3af"
-                    value={email}
-                    onChangeText={setEmail}
-                    onFocus={handleEmailFocus}
-                    onBlur={handleEmailBlur}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                  />
-                </Animated.View>
+                <Text style={styles.label}>Login</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Email or phone number"
+                  placeholderTextColor="#9ca3af"
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
               </View>
 
-              {/* Password Input with Animation */}
+              {/* Password Input */}
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Password</Text>
-                <Animated.View
-                  style={[
-                    styles.animatedPasswordWrapper,
-                    {
-                      borderColor: passwordBorderColor,
-                      transform: [{ scale: passwordScaleAnim }],
-                    },
-                  ]}
-                >
-                  <FontAwesome 
-                    name="lock" 
-                    size={16} 
-                    color="#6b7280" 
-                    style={styles.inputIcon}
-                  />
+                <View style={styles.passwordContainer}>
                   <TextInput
-                    style={styles.passwordInputWithIcon}
+                    style={styles.passwordInput}
                     placeholder="Enter password"
                     placeholderTextColor="#9ca3af"
                     value={password}
                     onChangeText={setPassword}
-                    onFocus={handlePasswordFocus}
-                    onBlur={handlePasswordBlur}
                     secureTextEntry={!showPassword}
                     autoCapitalize="none"
                   />
@@ -400,7 +266,7 @@ export default function App() {
                       color="#6b7280" 
                     />
                   </TouchableOpacity>
-                </Animated.View>
+                </View>
               </View>
 
               {/* Remember Me and Forgot Password */}
@@ -424,28 +290,62 @@ export default function App() {
               </View>
 
               {/* Sign In Button */}
-              <TouchableOpacity onPress={handleSignIn} activeOpacity={0.8}>
-                <View style={styles.signInButton}>
-                  <Text style={styles.signInButtonText}>SIGN IN</Text>
-                </View>
+              <TouchableOpacity onPress={handleSignIn} activeOpacity={0.8} disabled={submitting}>
+                <LinearGradient
+                  colors={['#F3E095', '#DACC96']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.signInButton}
+                >
+                  <Text style={styles.signInButtonText}>{submitting ? 'Signing in…' : 'Sign in'}</Text>
+                </LinearGradient>
               </TouchableOpacity>
 
               {/* Divider */}
-              <View style={styles.dividerContainer}>
-                <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>or Sign in with Google</Text>
-                <View style={styles.dividerLine} />
+              <View style={styles.divider} />
+
+              {/* Social icon-only buttons */}
+              <View style={styles.socialRow}>
+                <TouchableOpacity
+                  style={[styles.socialIconButton, styles.googleButton]}
+                  onPress={handleGoogleSignIn}
+                  activeOpacity={0.8}
+                  accessibilityLabel="Sign in with Google"
+                >
+                  <FontAwesome name="google" size={18} color="#fff" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.socialIconButton, styles.facebookButton]}
+                  onPress={handleFacebookSignIn}
+                  activeOpacity={0.8}
+                  accessibilityLabel="Sign in with Facebook"
+                >
+                  <FontAwesome name="facebook" size={18} color="#fff" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.socialIconButton}
+                  onPress={handleAppleSignIn}
+                  activeOpacity={0.8}
+                  accessibilityLabel="Sign in with Apple"
+                >
+                  <FontAwesome name="apple" size={18} color="#fff" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.socialIconButton, styles.microsoftButton]}
+                  onPress={handleMicrosoftSignIn}
+                  activeOpacity={0.8}
+                  accessibilityLabel="Sign in with Microsoft"
+                >
+                  <FontAwesome name="windows" size={18} color="#fff" />
+                </TouchableOpacity>
               </View>
 
-              {/* Google Sign In Button */}
-              <TouchableOpacity
-                style={styles.googleSignInButton}
-                onPress={handleGoogleSignIn}
-                activeOpacity={0.8}
-              >
-                <FontAwesome name="google" size={18} color="#DB4437" style={styles.googleIcon} />
-                <Text style={styles.googleButtonText}>Continue with Google</Text>
-              </TouchableOpacity>
+              {authError ? (
+                <Text style={styles.errorText}>{authError}</Text>
+              ) : null}
 
               {/* Sign Up Link */}
               <View style={styles.signUpContainer}>
@@ -458,147 +358,43 @@ export default function App() {
           ) : (
             // SIGN UP FORM
             <View style={styles.formContainer}>
-              {/* First Name and Last Name Row */}
-              <View style={styles.nameRow}>
-                <View style={styles.nameInputGroup}>
-                  <Text style={styles.label}>First Name</Text>
-                  <Animated.View
-                    style={[
-                      styles.animatedInputWrapper,
-                      {
-                        borderColor: signUpFirstNameBorderColor,
-                        transform: [{ scale: signUpFirstNameScaleAnim }],
-                      },
-                    ]}
-                  >
-                    <TextInput
-                      style={styles.input}
-                      placeholder=""
-                      placeholderTextColor="#9ca3af"
-                      value={signUpFirstName}
-                      onChangeText={setSignUpFirstName}
-                      onFocus={handleSignUpFirstNameFocus}
-                      onBlur={handleSignUpFirstNameBlur}
-                      autoCapitalize="words"
-                    />
-                  </Animated.View>
-                </View>
-
-                <View style={styles.nameInputGroup}>
-                  <Text style={styles.label}>Last Name</Text>
-                  <Animated.View
-                    style={[
-                      styles.animatedInputWrapper,
-                      {
-                        borderColor: signUpLastNameBorderColor,
-                        transform: [{ scale: signUpLastNameScaleAnim }],
-                      },
-                    ]}
-                  >
-                    <TextInput
-                      style={styles.input}
-                      placeholder=""
-                      placeholderTextColor="#9ca3af"
-                      value={signUpLastName}
-                      onChangeText={setSignUpLastName}
-                      onFocus={handleSignUpLastNameFocus}
-                      onBlur={handleSignUpLastNameBlur}
-                      autoCapitalize="words"
-                    />
-                  </Animated.View>
-                </View>
+              {/* Full Name Input */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Full Name</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your full name"
+                  placeholderTextColor="#9ca3af"
+                  value={signUpName}
+                  onChangeText={setSignUpName}
+                  autoCapitalize="words"
+                />
               </View>
 
-              {/* Email Input with Animation */}
+              {/* Email Input */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>E-mail</Text>
-                <Animated.View
-                  style={[
-                    styles.animatedInputWrapper,
-                    {
-                      borderColor: signUpEmailBorderColor,
-                      transform: [{ scale: signUpEmailScaleAnim }],
-                    },
-                  ]}
-                >
-                  <FontAwesome 
-                    name="envelope-o" 
-                    size={16} 
-                    color="#6b7280" 
-                    style={styles.inputIcon}
-                  />
-                  <TextInput
-                    style={styles.inputWithIcon}
-                    placeholder="Enter e-mail"
-                    placeholderTextColor="#9ca3af"
-                    value={signUpEmail}
-                    onChangeText={setSignUpEmail}
-                    onFocus={handleSignUpEmailFocus}
-                    onBlur={handleSignUpEmailBlur}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                  />
-                </Animated.View>
+                <Text style={styles.label}>Email</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your email"
+                  placeholderTextColor="#9ca3af"
+                  value={signUpEmail}
+                  onChangeText={setSignUpEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
               </View>
 
-              {/* Confirm Email Input with Animation */}
+              {/* Password Input */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Confirm E-mail</Text>
-                <Animated.View
-                  style={[
-                    styles.animatedInputWrapper,
-                    {
-                      borderColor: signUpConfirmEmailBorderColor,
-                      transform: [{ scale: signUpConfirmEmailScaleAnim }],
-                    },
-                  ]}
-                >
-                  <FontAwesome 
-                    name="envelope-o" 
-                    size={16} 
-                    color="#6b7280" 
-                    style={styles.inputIcon}
-                  />
+                <Text style={styles.label}>Password</Text>
+                <View style={styles.passwordContainer}>
                   <TextInput
-                    style={styles.inputWithIcon}
-                    placeholder="Confirm e-mail"
-                    placeholderTextColor="#9ca3af"
-                    value={signUpConfirmEmail}
-                    onChangeText={setSignUpConfirmEmail}
-                    onFocus={handleSignUpConfirmEmailFocus}
-                    onBlur={handleSignUpConfirmEmailBlur}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                  />
-                </Animated.View>
-              </View>
-
-              {/* Password Input with Animation */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Create Password</Text>
-                <Animated.View
-                  style={[
-                    styles.animatedPasswordWrapper,
-                    {
-                      borderColor: signUpPasswordBorderColor,
-                      transform: [{ scale: signUpPasswordScaleAnim }],
-                    },
-                  ]}
-                >
-                  <FontAwesome 
-                    name="lock" 
-                    size={16} 
-                    color="#6b7280" 
-                    style={styles.inputIcon}
-                  />
-                  <TextInput
-                    style={styles.passwordInputWithIcon}
-                    placeholder="Enter password"
+                    style={styles.passwordInput}
+                    placeholder="Create password"
                     placeholderTextColor="#9ca3af"
                     value={signUpPassword}
                     onChangeText={setSignUpPassword}
-                    onFocus={handleSignUpPasswordFocus}
-                    onBlur={handleSignUpPasswordBlur}
                     secureTextEntry={!showSignUpPassword}
                     autoCapitalize="none"
                   />
@@ -612,35 +408,19 @@ export default function App() {
                       color="#6b7280" 
                     />
                   </TouchableOpacity>
-                </Animated.View>
+                </View>
               </View>
 
-              {/* Confirm Password Input with Animation */}
+              {/* Confirm Password Input */}
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Confirm Password</Text>
-                <Animated.View
-                  style={[
-                    styles.animatedPasswordWrapper,
-                    {
-                      borderColor: signUpConfirmPasswordBorderColor,
-                      transform: [{ scale: signUpConfirmPasswordScaleAnim }],
-                    },
-                  ]}
-                >
-                  <FontAwesome 
-                    name="lock" 
-                    size={16} 
-                    color="#6b7280" 
-                    style={styles.inputIcon}
-                  />
+                <View style={styles.passwordContainer}>
                   <TextInput
-                    style={styles.passwordInputWithIcon}
-                    placeholder="Enter password"
+                    style={styles.passwordInput}
+                    placeholder="Confirm your password"
                     placeholderTextColor="#9ca3af"
                     value={signUpConfirmPassword}
                     onChangeText={setSignUpConfirmPassword}
-                    onFocus={handleSignUpConfirmPasswordFocus}
-                    onBlur={handleSignUpConfirmPasswordBlur}
                     secureTextEntry={!showConfirmPassword}
                     autoCapitalize="none"
                   />
@@ -654,27 +434,34 @@ export default function App() {
                       color="#6b7280" 
                     />
                   </TouchableOpacity>
-                </Animated.View>
+                </View>
               </View>
 
               {/* Sign Up Button */}
-              <TouchableOpacity onPress={handleSignUp} activeOpacity={0.8} style={{ marginTop: 8 }}>
-                <View style={styles.signInButton}>
-                  <Text style={styles.signInButtonText}>SIGN UP</Text>
-                </View>
+              <TouchableOpacity onPress={handleSignUp} activeOpacity={0.8} style={{ marginTop: 8 }} disabled={submitting}>
+                <LinearGradient
+                  colors={['#F3E095', '#DACC96']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.signInButton}
+                >
+                  <Text style={styles.signInButtonText}>{submitting ? 'Creating…' : 'Create account'}</Text>
+                </LinearGradient>
               </TouchableOpacity>
+              {authError ? (
+                <Text style={styles.errorText}>{authError}</Text>
+              ) : null}
 
               {/* Back to Sign In Link */}
               <View style={styles.signUpContainer}>
-                <Text style={styles.signUpText}>Have an account? </Text>
+                <Text style={styles.signUpText}>Already have an account? </Text>
                 <TouchableOpacity onPress={toggleSignUp}>
-                  <Text style={styles.signUpLink}>Sign in now</Text>
+                  <Text style={styles.signUpLink}>Sign in</Text>
                 </TouchableOpacity>
               </View>
             </View>
           )}
-          </View>
-        </LinearGradient>
+        </View>
       </LinearGradient>
 
       <StatusBar style="auto" />
@@ -688,7 +475,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   imageColumn: {
-    width: '65%',
+    width: '80%',
     height: '100%',
   },
   backgroundImage: {
@@ -696,230 +483,161 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   loginColumn: {
-    width: '35%',
+    width: '20%',
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
   },
   loginContainer: {
-    width: '80%',
-    maxWidth: 450,
-    // gradient is the background; keep outer container lightweight so edge shows
-    borderRadius: 16,
-    padding: 12,
-    overflow: 'visible',
-  },
-  loginCardBorder: {
-    borderWidth: 3,
-    borderColor: '#1f2937',
-    borderRadius: 14,
-    padding: 26,
-    backgroundColor: 'transparent',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    elevation: 8,
+    width: '85%',
+    maxWidth: 420,
   },
   logoSection: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
   },
   logo: {
-    width: 32,
-    height: 32,
-    marginRight: 10,
+    width: 40,
+    height: 40,
+    marginRight: 12,
   },
   appName: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
     color: '#1f2937',
-  },
-  welcomeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  welcomeIcon: {
-    marginRight: 8,
   },
   welcomeText: {
-    fontSize: 22,
-    fontWeight: '700',
+    fontSize: 24,
+    fontWeight: '600',
     color: '#1f2937',
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#4b5563',
-    marginBottom: 24,
+    marginBottom: 28,
   },
   formContainer: {
     width: '100%',
-  },
-  nameRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-    gap: 10,
-  },
-  nameInputGroup: {
-    flex: 1,
   },
   inputGroup: {
     marginBottom: 16,
   },
   label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: 8,
-  },
-  animatedInputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EFEAE2',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    paddingHorizontal: 12,
-  },
-  inputIcon: {
-    marginRight: 10,
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#4b5563',
+    marginBottom: 6,
   },
   input: {
-    padding: 10,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 8,
+    padding: 12,
     fontSize: 14,
     color: '#1f2937',
-    backgroundColor: 'transparent',
   },
-  inputWithIcon: {
-    flex: 1,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: '#1f2937',
-    backgroundColor: 'transparent',
-  },
-  animatedPasswordWrapper: {
+  passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EFEAE2',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    paddingHorizontal: 12,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 8,
+    position: 'relative',
   },
   passwordInput: {
     flex: 1,
-    padding: 10,
-    fontSize: 14,
-    color: '#1f2937',
-  },
-  passwordInputWithIcon: {
-    flex: 1,
-    paddingVertical: 10,
+    padding: 12,
     fontSize: 14,
     color: '#1f2937',
   },
   eyeIcon: {
-    padding: 10,
+    padding: 12,
   },
   optionsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 18,
-    marginTop: 4,
+    marginBottom: 20,
   },
   rememberMeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   checkbox: {
-    width: 16,
-    height: 16,
-    borderRadius: 3,
+    width: 20,
+    height: 20,
+    borderRadius: 5,
     borderWidth: 1,
-    borderColor: '#6b7280',
+    borderColor: '#9ca3af',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 6,
-    backgroundColor: '#EFEAE2',
+    marginRight: 8,
+    backgroundColor: '#fff',
   },
   checkboxChecked: {
-    backgroundColor: '#1f2937',
-    borderColor: '#1f2937',
+    backgroundColor: '#111827',
+    borderColor: '#111827',
   },
   rememberMeText: {
-    fontSize: 12,
-    color: '#1f2937',
+    fontSize: 13,
+    color: '#4b5563',
   },
   forgotPassword: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#1f2937',
     fontWeight: '500',
   },
   signInButton: {
     paddingVertical: 14,
-    borderRadius: 6,
+    borderRadius: 8,
     alignItems: 'center',
-    marginBottom: 20,
-    backgroundColor: '#574C3A',
+    marginBottom: 16,
   },
   signInButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#fff',
-    letterSpacing: 1,
-  },
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 20,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#d1d5db',
-  },
-  dividerText: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginHorizontal: 12,
-  },
-  googleSignInButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#EFEAE2',
-    paddingVertical: 12,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    marginBottom: 20,
-  },
-  googleIcon: {
-    marginRight: 10,
-  },
-  googleButtonText: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
     color: '#1f2937',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#d1d5db',
+    marginVertical: 16,
+  },
+  socialRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    marginTop: 12,
+    marginBottom: 20,
+    width: '100%',
+  },
+  socialIconButton: {
+    backgroundColor: '#262626',
+    width: 60,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 4,
+  },
+  googleButton: {
+    backgroundColor: '#DB4437',
+  },
+  facebookButton: {
+    backgroundColor: '#1877F2',
+  },
+  microsoftButton: {
+    backgroundColor: '#00A4EF',
   },
   signUpContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 6,
+    marginTop: 8,
   },
   signUpText: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#4b5563',
   },
   signUpLink: {
-    fontSize: 12,
-    color: '#1f2937',
-    fontWeight: '700',
+    fontSize: 13,
+    color: '#3b82f6',
+    fontWeight: '600',
   },
   welcomeScreen: {
     flex: 1,
