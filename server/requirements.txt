@@ -1,0 +1,6 @@
+flask
+pillow
+numpy
+tensorflow
+# Note: tensorflow is a large package. If you only need CPU inference, consider installing tensorflow-cpu for smaller footprint:
+# tensorflow-cpu

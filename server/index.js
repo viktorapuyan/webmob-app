@@ -1,5 +1,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
+import fs from 'fs';
+import os from 'os';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -128,6 +130,59 @@ app.get('/', (req, res) => {
 
 app.get('/healthz', (_req, res) => {
   res.status(200).json({ status: 'ok' });
+});
+// Save captured image to the server machine Desktop
+app.post('/api/save-image', express.json({ limit: '10mb' }), async (req, res) => {
+  try {
+    const { image, filename } = req.body || {};
+    if (!image) return res.status(400).json({ error: 'Missing image' });
+
+    let b64 = image;
+    if (typeof b64 === 'string' && b64.startsWith('data:')) b64 = b64.split(',')[1];
+    const buffer = Buffer.from(b64, 'base64');
+
+    // Determine desktop path; allow override via DESKTOP_DIR env var
+    let desktopDir = process.env.DESKTOP_DIR;
+    if (!desktopDir) {
+      const home = os.homedir();
+      desktopDir = path.join(home, 'Desktop');
+    }
+    // ensure directory exists
+    await fs.promises.mkdir(desktopDir, { recursive: true });
+
+    const time = Date.now();
+    const safeName = filename ? filename.replace(/[^a-zA-Z0-9._-]/g, '_') : `capture_${time}.jpg`;
+    const full = path.join(desktopDir, safeName);
+    await fs.promises.writeFile(full, buffer);
+    console.log('Saved image to', full);
+    res.json({ status: 'ok', path: full });
+  } catch (err) {
+    console.error('save-image error', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Image segmentation/proxy endpoint — forwards base64 image JSON to a Python service
+app.post('/api/segment', express.json({ limit: '50mb' }), async (req, res) => {
+  try {
+    const { image } = req.body || {};
+    if (!image) return res.status(400).json({ error: 'Missing image' });
+
+    // Forward to Python model service running on localhost:5000
+    const pythonUrl = process.env.PY_MODEL_URL || 'http://127.0.0.1:4000/segment';
+    // Use global fetch (Node 18+). If not available, the runtime should polyfill or you can add node-fetch.
+    const r = await fetch(pythonUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image })
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(r.status).json(data);
+    return res.json(data);
+  } catch (err) {
+    console.error('/api/segment error', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Friendly 404 for any other routes
